@@ -117,244 +117,255 @@ function generateSmartNewsFallback(title: string, description?: string, siteName
   };
 }
 
-export function registerApiRoutes(app: Express) {
-  // Health check
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      app: "slsportscard",
-      timestamp: new Date().toISOString(),
-    });
+export function handleHealth(_req: any, res: any) {
+  return res.json({
+    status: "ok",
+    app: "slsportscard",
+    timestamp: new Date().toISOString(),
   });
+}
 
-  // Proxy image to prevent canvas CORS taint during Facebook image export
-  app.get("/api/proxy-image", async (req, res) => {
-    try {
-      const imageUrl = req.query.url as string;
-      if (!imageUrl) {
-        return res.status(400).json({ error: "Missing image URL parameter 'url'" });
-      }
-
-      let targetUrl = imageUrl;
-      if (targetUrl.startsWith("//")) {
-        targetUrl = "https:" + targetUrl;
-      }
-
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        },
-      });
-
-      if (!response.ok) {
-        return res
-          .status(response.status)
-          .json({ error: `Failed to fetch image: ${response.statusText}` });
-      }
-
-      const contentType = response.headers.get("content-type") || "image/jpeg";
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cache-Control", "public, max-age=86400");
-
-      const arrayBuffer = await response.arrayBuffer();
-      res.send(Buffer.from(arrayBuffer));
-    } catch (err: any) {
-      console.error("Proxy image error:", err);
-      res.status(500).json({ error: "Failed to proxy image: " + (err.message || String(err)) });
+export async function handleProxyImage(req: any, res: any) {
+  try {
+    const imageUrl = (req.query?.url || "") as string;
+    if (!imageUrl) {
+      return res.status(400).json({ error: "Missing image URL parameter 'url'" });
     }
-  });
 
-  // Fetch article metadata from user URL
-  app.post("/api/fetch-article", async (req, res) => {
-    try {
-      let { url } = req.body;
-      if (!url || typeof url !== "string") {
-        return res.status(400).json({ error: "Please provide a valid article URL." });
-      }
+    let targetUrl = imageUrl;
+    if (targetUrl.startsWith("//")) {
+      targetUrl = "https:" + targetUrl;
+    }
 
-      url = url.trim();
-      if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        url = "https://" + url;
-      }
+    const response = await fetch(targetUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
 
-      let parsedUrl: URL;
+    if (!response.ok) {
+      return res
+        .status(response.status)
+        .json({ error: `Failed to fetch image: ${response.statusText}` });
+    }
+
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+
+    const arrayBuffer = await response.arrayBuffer();
+    return res.send(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    console.error("Proxy image error:", err);
+    return res.status(500).json({ error: "Failed to proxy image: " + (err.message || String(err)) });
+  }
+}
+
+export async function handleFetchArticle(req: any, res: any) {
+  try {
+    let body = req.body;
+    if (typeof body === "string") {
       try {
-        parsedUrl = new URL(url);
+        body = JSON.parse(body);
       } catch {
-        return res.status(400).json({ error: "Invalid URL structure." });
+        // use raw body
       }
+    }
+    let { url } = body || {};
+    if (!url || typeof url !== "string") {
+      return res.status(400).json({ error: "Please provide a valid article URL." });
+    }
 
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FacebookExternalHit/1.1",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        redirect: "follow",
+    url = url.trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = "https://" + url;
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return res.status(400).json({ error: "Invalid URL structure." });
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FacebookExternalHit/1.1",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: `Failed to load webpage (${response.status}: ${response.statusText}).`,
       });
+    }
 
-      if (!response.ok) {
-        return res.status(response.status).json({
-          error: `Failed to load webpage (${response.status}: ${response.statusText}).`,
-        });
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    // Helper to resolve relative URLs
+    const resolveUrl = (link?: string | null): string | null => {
+      if (!link) return null;
+      link = link.trim();
+      if (!link) return null;
+      try {
+        return new URL(link, parsedUrl.origin).href;
+      } catch {
+        return link;
       }
+    };
 
-      const html = await response.text();
-      const $ = cheerio.load(html);
+    // Extract Title
+    const rawTitle =
+      $('meta[property="og:title"]').attr("content") ||
+      $('meta[name="twitter:title"]').attr("content") ||
+      $('meta[name="title"]').attr("content") ||
+      $("h1").first().text().trim() ||
+      $("title").text().trim() ||
+      "";
 
-      // Helper to resolve relative URLs
-      const resolveUrl = (link?: string | null): string | null => {
-        if (!link) return null;
-        link = link.trim();
-        if (!link) return null;
-        try {
-          return new URL(link, parsedUrl.origin).href;
-        } catch {
-          return link;
-        }
-      };
+    // Clean title from common suffix like " | CNN", " - The New York Times"
+    const cleanedTitle = rawTitle.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "").trim() || rawTitle;
 
-      // Extract Title
-      const rawTitle =
-        $('meta[property="og:title"]').attr("content") ||
-        $('meta[name="twitter:title"]').attr("content") ||
-        $('meta[name="title"]').attr("content") ||
-        $("h1").first().text().trim() ||
-        $("title").text().trim() ||
-        "";
+    // Extract Description / Caption
+    const rawDescription =
+      $('meta[property="og:description"]').attr("content") ||
+      $('meta[name="twitter:description"]').attr("content") ||
+      $('meta[name="description"]').attr("content") ||
+      $("article p").first().text().trim() ||
+      $("main p").first().text().trim() ||
+      $("p").first().text().trim() ||
+      "";
 
-      // Clean title from common suffix like " | CNN", " - The New York Times"
-      const cleanedTitle = rawTitle.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "").trim() || rawTitle;
+    // Extract Site Name / Publisher
+    let siteName =
+      $('meta[property="og:site_name"]').attr("content") ||
+      $('meta[name="application-name"]').attr("content") ||
+      "";
 
-      // Extract Description / Caption
-      const rawDescription =
-        $('meta[property="og:description"]').attr("content") ||
-        $('meta[name="twitter:description"]').attr("content") ||
-        $('meta[name="description"]').attr("content") ||
-        $("article p").first().text().trim() ||
-        $("main p").first().text().trim() ||
-        $("p").first().text().trim() ||
-        "";
-
-      // Extract Site Name / Publisher
-      let siteName =
-        $('meta[property="og:site_name"]').attr("content") ||
-        $('meta[name="application-name"]').attr("content") ||
-        "";
-
-      if (!siteName) {
-        const host = parsedUrl.hostname.replace(/^www\./, "");
-        const parts = host.split(".");
-        if (parts.length > 0) {
-          siteName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-        }
+    if (!siteName) {
+      const host = parsedUrl.hostname.replace(/^www\./, "");
+      const parts = host.split(".");
+      if (parts.length > 0) {
+        siteName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
       }
+    }
 
-      // Extract Main Featured Image
-      let featuredImage =
-        resolveUrl($('meta[property="og:image:secure_url"]').attr("content")) ||
-        resolveUrl($('meta[property="og:image"]').attr("content")) ||
-        resolveUrl($('meta[name="twitter:image:src"]').attr("content")) ||
-        resolveUrl($('meta[name="twitter:image"]').attr("content")) ||
-        resolveUrl($('link[rel="image_src"]').attr("href")) ||
-        null;
+    // Extract Main Featured Image
+    let featuredImage =
+      resolveUrl($('meta[property="og:image:secure_url"]').attr("content")) ||
+      resolveUrl($('meta[property="og:image"]').attr("content")) ||
+      resolveUrl($('meta[name="twitter:image:src"]').attr("content")) ||
+      resolveUrl($('meta[name="twitter:image"]').attr("content")) ||
+      resolveUrl($('link[rel="image_src"]').attr("href")) ||
+      null;
 
-      // Extract additional candidate images from the article
-      const candidateImages: string[] = [];
-      if (featuredImage) {
-        candidateImages.push(featuredImage);
-      }
+    // Extract additional candidate images from the article
+    const candidateImages: string[] = [];
+    if (featuredImage) {
+      candidateImages.push(featuredImage);
+    }
 
-      $("article img, main img, .article-body img, .entry-content img, img").each((_, el) => {
-        const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("srcset");
-        if (src) {
-          const firstSrc = src.split(",")[0].trim().split(" ")[0];
-          const resolved = resolveUrl(firstSrc);
-          if (
-            resolved &&
-            !resolved.endsWith(".svg") &&
-            !resolved.includes("avatar") &&
-            !resolved.includes("logo") &&
-            !resolved.includes("icon") &&
-            !candidateImages.includes(resolved)
-          ) {
-            if (candidateImages.length < 8) {
-              candidateImages.push(resolved);
-            }
+    $("article img, main img, .article-body img, .entry-content img, img").each((_, el) => {
+      const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("srcset");
+      if (src) {
+        const firstSrc = src.split(",")[0].trim().split(" ")[0];
+        const resolved = resolveUrl(firstSrc);
+        if (
+          resolved &&
+          !resolved.endsWith(".svg") &&
+          !resolved.includes("avatar") &&
+          !resolved.includes("logo") &&
+          !resolved.includes("icon") &&
+          !candidateImages.includes(resolved)
+        ) {
+          if (candidateImages.length < 8) {
+            candidateImages.push(resolved);
           }
         }
-      });
-
-      if (!featuredImage && candidateImages.length > 0) {
-        featuredImage = candidateImages[0];
       }
+    });
 
-      // Extract Author and Date
-      const author =
-        $('meta[name="author"]').attr("content") ||
-        $('meta[property="article:author"]').attr("content") ||
-        $(".author").first().text().trim() ||
-        "";
-
-      const publishedTime =
-        $('meta[property="article:published_time"]').attr("content") ||
-        $('meta[name="publish-date"]').attr("content") ||
-        $("time").first().attr("datetime") ||
-        $("time").first().text().trim() ||
-        "";
-
-      // Favicon
-      const favicon =
-        resolveUrl($('link[rel="icon"]').attr("href")) ||
-        resolveUrl($('link[rel="shortcut icon"]').attr("href")) ||
-        `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=128`;
-
-      res.json({
-        success: true,
-        url,
-        domain: parsedUrl.hostname.replace(/^www\./, ""),
-        title: cleanedTitle || rawTitle || "Breaking News Headline",
-        originalTitle: rawTitle,
-        description: rawDescription || "Read the full coverage and latest details on this developing story.",
-        featuredImage,
-        candidateImages,
-        siteName: siteName || parsedUrl.hostname,
-        author,
-        publishedTime,
-        favicon,
-      });
-    } catch (err: any) {
-      console.error("Fetch article error:", err);
-      res.status(500).json({
-        error: "Failed to fetch article: " + (err.message || String(err)),
-      });
-    }
-  });
-
-  // AI-powered Headline & Facebook Post Generator with resilient failover & fallback
-  app.post("/api/ai-enhance", async (req, res) => {
-    const { title, description, siteName } = req.body || {};
-    if (!title) {
-      return res.status(400).json({ error: "Missing article title for AI enhancement." });
+    if (!featuredImage && candidateImages.length > 0) {
+      featuredImage = candidateImages[0];
     }
 
-    const fallbackData = generateSmartNewsFallback(title, description, siteName);
+    // Extract Author and Date
+    const author =
+      $('meta[name="author"]').attr("content") ||
+      $('meta[property="article:author"]').attr("content") ||
+      $(".author").first().text().trim() ||
+      "";
 
-    const ai = getGeminiClient();
-    if (!ai) {
-      return res.json({
-        success: true,
-        data: fallbackData,
-        source: "editorial-engine",
-      });
+    const publishedTime =
+      $('meta[property="article:published_time"]').attr("content") ||
+      $('meta[name="publish-date"]').attr("content") ||
+      $("time").first().attr("datetime") ||
+      $("time").first().text().trim() ||
+      "";
+
+    // Favicon
+    const favicon =
+      resolveUrl($('link[rel="icon"]').attr("href")) ||
+      resolveUrl($('link[rel="shortcut icon"]').attr("href")) ||
+      `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=128`;
+
+    return res.json({
+      success: true,
+      url,
+      domain: parsedUrl.hostname.replace(/^www\./, ""),
+      title: cleanedTitle || rawTitle || "Breaking News Headline",
+      originalTitle: rawTitle,
+      description: rawDescription || "Read the full coverage and latest details on this developing story.",
+      featuredImage,
+      candidateImages,
+      siteName: siteName || parsedUrl.hostname,
+      author,
+      publishedTime,
+      favicon,
+    });
+  } catch (err: any) {
+    console.error("Fetch article error:", err);
+    return res.status(500).json({
+      error: "Failed to fetch article: " + (err.message || String(err)),
+    });
+  }
+}
+
+export async function handleAiEnhance(req: any, res: any) {
+  let body = req.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      // use raw body
     }
+  }
+  const { title, description, siteName } = body || {};
+  if (!title) {
+    return res.status(400).json({ error: "Missing article title for AI enhancement." });
+  }
 
-    const prompt = `You are a social media news editor specializing in high-engagement Facebook news graphics.
+  const fallbackData = generateSmartNewsFallback(title, description, siteName);
+
+  const ai = getGeminiClient();
+  if (!ai) {
+    return res.json({
+      success: true,
+      data: fallbackData,
+      source: "editorial-engine",
+    });
+  }
+
+  const prompt = `You are a social media news editor specializing in high-engagement Facebook news graphics.
 Based on this article:
 Title: "${title}"
 Summary: "${description || "No summary provided"}"
@@ -383,52 +394,66 @@ Return ONLY valid JSON matching this schema:
   "fbPostCaption": "string"
 }`;
 
-    const candidateModels = ["gemini-2.5-flash", "gemini-3.8-flash"];
+  const candidateModels = ["gemini-2.5-flash", "gemini-3.8-flash"];
 
-    for (const modelName of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          },
-        });
+  for (const modelName of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
 
-        const text = response?.text;
-        if (text) {
-          const parsed = JSON.parse(text);
-          if (parsed && parsed.headlines) {
-            return res.json({
-              success: true,
-              data: parsed,
-              source: `gemini-${modelName}`,
-            });
-          }
-        }
-      } catch (err: any) {
-        const msg = err?.message || String(err);
-        const isHighDemandOrUnavailable =
-          msg.includes("503") ||
-          msg.includes("high demand") ||
-          msg.includes("UNAVAILABLE") ||
-          msg.includes("429") ||
-          msg.includes("RESOURCE_EXHAUSTED");
-
-        if (isHighDemandOrUnavailable) {
-          console.warn(`Gemini model ${modelName} is experiencing high demand (503/429). Trying fallback...`);
-        } else {
-          console.warn(`Gemini model ${modelName} call error:`, msg);
+      const text = response?.text;
+      if (text) {
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.headlines) {
+          return res.json({
+            success: true,
+            data: parsed,
+            source: `gemini-${modelName}`,
+          });
         }
       }
-    }
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      const isHighDemandOrUnavailable =
+        msg.includes("503") ||
+        msg.includes("high demand") ||
+        msg.includes("UNAVAILABLE") ||
+        msg.includes("429") ||
+        msg.includes("RESOURCE_EXHAUSTED");
 
-    // High demand fallback
-    return res.json({
-      success: true,
-      data: fallbackData,
-      source: "editorial-engine",
-      fallback: true,
-    });
+      if (isHighDemandOrUnavailable) {
+        console.warn(`Gemini model ${modelName} is experiencing high demand (503/429). Trying fallback...`);
+      } else {
+        console.warn(`Gemini model ${modelName} call error:`, msg);
+      }
+    }
+  }
+
+  // High demand fallback
+  return res.json({
+    success: true,
+    data: fallbackData,
+    source: "editorial-engine",
+    fallback: true,
   });
+}
+
+export function registerApiRoutes(app: Express) {
+  // Support both with and without /api prefix
+  app.get("/api/health", handleHealth);
+  app.get("/health", handleHealth);
+
+  app.get("/api/proxy-image", handleProxyImage);
+  app.get("/proxy-image", handleProxyImage);
+
+  app.post("/api/fetch-article", handleFetchArticle);
+  app.post("/fetch-article", handleFetchArticle);
+
+  app.post("/api/ai-enhance", handleAiEnhance);
+  app.post("/ai-enhance", handleAiEnhance);
 }

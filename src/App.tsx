@@ -115,11 +115,14 @@ export default function App() {
         }),
       });
 
-      const json = await res.json();
-      if (res.ok && json.success && json.data) {
-        setAiResult(json.data);
-        if (json.data.badge) {
-          handleConfigChange({ badge: json.data.badge });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setAiResult(json.data);
+          if (json.data.badge) {
+            handleConfigChange({ badge: json.data.badge });
+          }
         }
       }
     } catch (err) {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ArticleData } from "../types";
 import { SAMPLE_ARTICLES } from "../data/sampleArticles";
+import { extractArticleClientSide } from "../utils/clientArticleExtractor";
 
 interface UrlFetcherProps {
   onArticleFetched: (article: ArticleData) => void;
@@ -49,26 +50,45 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
       const timer1 = setTimeout(() => setFetchStatusStep("Parsing OpenGraph metadata & article headers..."), 400);
       const timer2 = setTimeout(() => setFetchStatusStep("Extracting lead image and news caption..."), 900);
 
-      const res = await fetch("/api/fetch-article", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl }),
-      });
+      let articleData: ArticleData | null = null;
 
-      clearTimeout(timer1);
-      clearTimeout(timer2);
+      try {
+        const res = await fetch("/api/fetch-article", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: targetUrl }),
+        });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to fetch website article");
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          if (res.ok && data?.success) {
+            articleData = data;
+          }
+        }
+      } catch (networkErr) {
+        console.warn("Server API fetch warning, attempting fallback...", networkErr);
       }
 
-      onArticleFetched(data);
-      setInputUrl(targetUrl);
+      // If server API was unavailable, returned HTML, or failed, use client-side extractor
+      if (!articleData) {
+        setFetchStatusStep("Extracting article metadata directly...");
+        articleData = await extractArticleClientSide(targetUrl);
+      }
+
+      if (articleData && articleData.title) {
+        onArticleFetched(articleData);
+        setInputUrl(targetUrl);
+      } else {
+        throw new Error("Could not extract article details from this URL.");
+      }
     } catch (err: any) {
       console.error("Fetch error:", err);
       setErrorMessage(
-        err.message ||
+        err?.message ||
           "Could not read article from this URL. Make sure the link is public, or try one of the sample articles below."
       );
     } finally {
