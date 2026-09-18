@@ -1,0 +1,6 @@
+{
+  "name": "Facebook News Image Generator",
+  "description": "Generate professional SLSports and Facebook news cards, banners, and post images ready for deployment at slsportscard.vercel.app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

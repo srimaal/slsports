@@ -1,0 +1,86 @@
+import { ArticleData } from "../types";
+
+export const SAMPLE_ARTICLES: { label: string; tag: string; data: ArticleData }[] = [
+  {
+    label: "Space Exploration Discovery",
+    tag: "Science",
+    data: {
+      url: "https://www.nasa.gov/mission_pages/webb/main/index.html",
+      domain: "nasa.gov",
+      title: "James Webb Telescope Unveils Deepest View of Early Star Clusters Ever Recorded",
+      originalTitle: "James Webb Telescope Unveils Deepest View of Early Star Clusters Ever Recorded - NASA",
+      description: "Astronomers capture unprecedented detail of primordial galaxies formed just 300 million years after the Big Bang, challenging standard cosmic evolution models.",
+      featuredImage: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1200&auto=format&fit=crop",
+      candidateImages: [
+        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?q=80&w=1200&auto=format&fit=crop",
+      ],
+      siteName: "NASA Newsroom",
+      author: "Astrophysics Directorate",
+      publishedTime: "2 hours ago",
+      favicon: "https://www.google.com/s2/favicons?domain=nasa.gov&sz=128",
+    },
+  },
+  {
+    label: "Renewable Energy Breakthrough",
+    tag: "Tech & Climate",
+    data: {
+      url: "https://techcrunch.com/energy/next-gen-solid-state-battery",
+      domain: "techcrunch.com",
+      title: "Engineers Achieve 1,000-Mile EV Range With Revolutionary Solid-State Battery",
+      originalTitle: "Engineers Achieve 1,000-Mile EV Range With Revolutionary Solid-State Battery | TechCrunch",
+      description: "Commercial prototype delivers 10-minute full recharge time without degradation across 2,000 continuous laboratory charge cycles.",
+      featuredImage: "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?q=80&w=1200&auto=format&fit=crop",
+      candidateImages: [
+        "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1509391365360-2e959784a276?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1498084393753-b411b2d26b34?q=80&w=1200&auto=format&fit=crop",
+      ],
+      siteName: "TechCrunch",
+      author: "Elena Rostova",
+      publishedTime: "Today",
+      favicon: "https://www.google.com/s2/favicons?domain=techcrunch.com&sz=128",
+    },
+  },
+  {
+    label: "Global Financial Markets",
+    tag: "Economy",
+    data: {
+      url: "https://www.bloomberg.com/news/articles/global-markets-inflation-report",
+      domain: "bloomberg.com",
+      title: "Global Central Banks Signal Coordinated Interest Rate Cuts Amid Cooling Inflation",
+      originalTitle: "Global Central Banks Signal Coordinated Interest Rate Cuts - Bloomberg",
+      description: "Equities rally across Europe and Asia as consumer price indicators drop to their lowest levels in four years, opening the door for economic stimulus.",
+      featuredImage: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=1200&auto=format&fit=crop",
+      candidateImages: [
+        "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?q=80&w=1200&auto=format&fit=crop",
+      ],
+      siteName: "Bloomberg Markets",
+      author: "Marcus Vance",
+      publishedTime: "35 mins ago",
+      favicon: "https://www.google.com/s2/favicons?domain=bloomberg.com&sz=128",
+    },
+  },
+  {
+    label: "Wildlife Conservation Milestone",
+    tag: "Environment",
+    data: {
+      url: "https://www.nationalgeographic.com/animals/article/mountain-gorilla-population-recovery",
+      domain: "nationalgeographic.com",
+      title: "Mountain Gorilla Populations Reach Historic 25-Year High Following Community Patrols",
+      originalTitle: "Mountain Gorilla Populations Reach Historic 25-Year High - National Geographic",
+      description: "Dedicated ranger networks and eco-tourism revenue-sharing initiatives bring the critically endangered species back from the brink of extinction.",
+      featuredImage: "https://images.unsplash.com/photo-1548767797-d8c844163c4c?q=80&w=1200&auto=format&fit=crop",
+      candidateImages: [
+        "https://images.unsplash.com/photo-1548767797-d8c844163c4c?q=80&w=1200&auto=format&fit=crop",
+        "https://images.unsplash.com/photo-1534567153574-2b12153a87f0?q=80&w=1200&auto=format&fit=crop",
+      ],
+      siteName: "National Geographic",
+      author: "Amara Diallo",
+      publishedTime: "Yesterday",
+      favicon: "https://www.google.com/s2/favicons?domain=nationalgeographic.com&sz=128",
+    },
+  },
+];
