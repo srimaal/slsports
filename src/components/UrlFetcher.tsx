@@ -176,11 +176,29 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
         console.warn("Server API fetch warning, attempting client fallback...", networkErr);
       }
 
-      // If server API was unavailable, returned HTML, or failed, use client-side extractor
-      if (!articleData) {
-        setFetchStatusStep("Extracting article directly from slsports.lk...");
+      // If server API was unavailable, or returned an article without a featured image,
+      // run client-side extractor to recover full metadata & featured photos
+      if (!articleData || !articleData.featuredImage) {
+        setFetchStatusStep("Retrieving HD match photo & story details...");
         try {
-          articleData = await extractArticleClientSide(targetUrl);
+          const clientData = await extractArticleClientSide(targetUrl);
+          if (clientData) {
+            if (!articleData) {
+              articleData = clientData;
+            } else {
+              // Merge in client-extracted image and candidate photos
+              articleData = {
+                ...articleData,
+                title: articleData.title || clientData.title,
+                featuredImage: clientData.featuredImage || articleData.featuredImage,
+                candidateImages: [
+                  ...(clientData.candidateImages || []),
+                  ...(articleData.candidateImages || []),
+                ].filter((v, i, a) => a.indexOf(v) === i),
+                description: articleData.description || clientData.description,
+              };
+            }
+          }
         } catch (clientErr) {
           console.warn("Client side extraction fallback warning:", clientErr);
         }
@@ -189,14 +207,16 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
       // If still null, extract headline from URL slug so user is NEVER blocked
       if (!articleData || !articleData.title) {
         const slugHeadline = parseSlugToHeadline(targetUrl);
+        // Default high-res sports background if all extraction fails
+        const fallbackImage = "https://slsports.lk/wp-content/uploads/2026/09/asa-2026-09-18.jpg";
         articleData = {
           url: targetUrl,
           domain: "slsports.lk",
           title: slugHeadline,
           originalTitle: slugHeadline,
-          description: "Read the latest developing sports coverage and match report on slsports.lk.",
-          featuredImage: null,
-          candidateImages: [],
+          description: "Read the latest developing sports coverage and full match details on slsports.lk.",
+          featuredImage: fallbackImage,
+          candidateImages: [fallbackImage],
           siteName: "SL Sports",
           author: "SL Sports Desk",
           publishedTime: "Today",
@@ -211,14 +231,15 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
       // Even in exceptional errors, load fallback article from URL slug
       try {
         const slugHeadline = parseSlugToHeadline(targetUrl);
+        const fallbackImage = "https://slsports.lk/wp-content/uploads/2026/09/asa-2026-09-18.jpg";
         const fallbackArticle: ArticleData = {
           url: targetUrl,
           domain: "slsports.lk",
           title: slugHeadline,
           originalTitle: slugHeadline,
           description: "Read the latest developing sports coverage and match report on slsports.lk.",
-          featuredImage: null,
-          candidateImages: [],
+          featuredImage: fallbackImage,
+          candidateImages: [fallbackImage],
           siteName: "SL Sports",
           author: "SL Sports Desk",
           publishedTime: "Today",

@@ -59,7 +59,12 @@ export const NewsPreviewCanvas: React.FC<NewsPreviewCanvasProps> = ({
       try {
         await renderNewsCardToCanvas(canvasRef.current, config);
         if (!isCancelled && canvasRef.current) {
-          setPreviewDataUrl(canvasRef.current.toDataURL("image/png"));
+          try {
+            setPreviewDataUrl(canvasRef.current.toDataURL("image/png"));
+          } catch (taintErr) {
+            // Safe fallback if canvas was tainted
+            console.warn("Direct toDataURL not available:", taintErr);
+          }
         }
       } catch (err) {
         console.error("Canvas render error:", err);
@@ -81,19 +86,23 @@ export const NewsPreviewCanvas: React.FC<NewsPreviewCanvasProps> = ({
   // Download Handler
   const handleDownload = (format: "png" | "jpeg" = "png") => {
     if (!canvasRef.current) return;
-    const mime = format === "png" ? "image/png" : "image/jpeg";
-    const quality = format === "png" ? undefined : 0.92;
-    const dataUrl = canvasRef.current.toDataURL(mime, quality);
+    try {
+      const mime = format === "png" ? "image/png" : "image/jpeg";
+      const quality = format === "png" ? undefined : 0.92;
+      const dataUrl = canvasRef.current.toDataURL(mime, quality);
 
-    const safeHeadline = (config.headline || "facebook-news-image")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .slice(0, 40);
+      const safeHeadline = (config.headline || "facebook-news-image")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 40);
 
-    const link = document.createElement("a");
-    link.download = `${safeHeadline}-${config.aspectRatio.replace(":", "x")}.${format}`;
-    link.href = dataUrl;
-    link.click();
+      const link = document.createElement("a");
+      link.download = `${safeHeadline}-${config.aspectRatio.replace(":", "x")}.${format}`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Canvas export failed:", err);
+    }
   };
 
   // Copy Image to Clipboard

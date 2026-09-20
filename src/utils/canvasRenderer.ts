@@ -47,28 +47,68 @@ export function wrapText(
   return lines;
 }
 
-// Load image safely via proxy or data URI
+// Load image safely via resilient multi-tier pipeline (Direct CORS -> Proxy -> CDN -> No-CORS)
 export function loadSafeImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-
-    // If it's an external HTTP URL, route through proxy to prevent canvas CORS taint
-    let loadUrl = src;
-    if (src.startsWith("http://") || src.startsWith("https://")) {
-      loadUrl = `/api/proxy-image?url=${encodeURIComponent(src)}`;
+    if (!src) {
+      return reject(new Error("Empty image source"));
     }
 
-    img.onload = () => resolve(img);
-    img.onerror = () => {
-      // If proxy failed, try loading directly with crossOrigin
-      const fallbackImg = new Image();
-      fallbackImg.crossOrigin = "anonymous";
-      fallbackImg.onload = () => resolve(fallbackImg);
-      fallbackImg.onerror = (e) => reject(e);
-      fallbackImg.src = src;
+    // Data URI or blob URL can load immediately
+    if (src.startsWith("data:") || src.startsWith("blob:")) {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = (e) => reject(e);
+      img.src = src;
+      return;
+    }
+
+    // Pipeline of candidate URLs to try in sequence:
+    // 1. Direct URL with anonymous CORS (slsports.lk allows this natively)
+    // 2. /api/proxy-image
+    // 3. Global high-speed image CDN weserv.nl (always open CORS)
+    // 4. Direct URL without CORS (ensures visual display on canvas)
+    const candidates = [
+      { url: src, crossOrigin: "anonymous" as const },
+      { url: `/api/proxy-image?url=${encodeURIComponent(src)}`, crossOrigin: "anonymous" as const },
+      { url: `https://images.weserv.nl/?url=${encodeURIComponent(src)}`, crossOrigin: "anonymous" as const },
+      { url: src, crossOrigin: undefined },
+    ];
+
+    let currentIndex = 0;
+
+    const tryNext = () => {
+      if (currentIndex >= candidates.length) {
+        return reject(new Error(`Failed to load image after trying all fallbacks: ${src}`));
+      }
+
+      const current = candidates[currentIndex++];
+      const img = new Image();
+      let timer: any = null;
+
+      if (current.crossOrigin) {
+        img.crossOrigin = current.crossOrigin;
+      }
+
+      img.onload = () => {
+        if (timer) clearTimeout(timer);
+        resolve(img);
+      };
+
+      img.onerror = () => {
+        if (timer) clearTimeout(timer);
+        tryNext();
+      };
+
+      timer = setTimeout(() => {
+        img.src = "";
+        tryNext();
+      }, 5000);
+
+      img.src = current.url;
     };
-    img.src = loadUrl;
+
+    tryNext();
   });
 }
 

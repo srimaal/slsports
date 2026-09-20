@@ -88,7 +88,22 @@ export default function App() {
 
       const cleanTitle = article.title || article.originalTitle || "Breaking News Headline";
       const cleanDesc = article.description || "";
-      const chosenImg = article.featuredImage || (article.candidateImages && article.candidateImages[0]) || "";
+      const chosenImg =
+        article.featuredImage ||
+        (article.candidateImages && article.candidateImages[0]) ||
+        config.activeImageUrl ||
+        "https://slsports.lk/wp-content/uploads/2026/09/asa-2026-09-18.jpg";
+
+      // Detect initial badge based on content
+      const lower = `${cleanTitle} ${cleanDesc}`.toLowerCase();
+      let autoBadge = "BREAKING";
+      if (lower.includes("cricket") || lower.includes("runs") || lower.includes("wickets") || lower.includes("match") || lower.includes("t20") || lower.includes("ipl")) {
+        autoBadge = "CRICKET";
+      } else if (lower.includes("athletics") || lower.includes("track") || lower.includes("olympic")) {
+        autoBadge = "ATHLETICS";
+      } else if (lower.includes("football") || lower.includes("fifa")) {
+        autoBadge = "FOOTBALL";
+      }
 
       resetConfig(
         {
@@ -99,8 +114,8 @@ export default function App() {
           publisherHandle: "@slsports_lk",
           customDate: article.publishedTime || "Today",
           watermarkText: "slsports.lk",
-          activeImageUrl: chosenImg || config.activeImageUrl,
-          badge: "",
+          activeImageUrl: chosenImg,
+          badge: autoBadge,
           quoteAuthor: article.author || "SL Sports Desk",
         },
         `Load Article: ${cleanTitle.slice(0, 32)}...`
