@@ -24,20 +24,30 @@ import {
   FontFamily,
   ImageFilter,
   AiEnhanceResult,
+  ConfigHistoryEntry,
 } from "../types";
 import { DEFAULT_SLSPORTS_LOGO_URL } from "../utils/logoAsset";
+import { UndoRedoControls } from "./UndoRedoControls";
 
 interface EditorControlsProps {
   config: NewsConfig;
-  onChange: (updates: Partial<NewsConfig>) => void;
+  onChange: (updates: Partial<NewsConfig>, actionDescription?: string) => void;
   onGenerateAiEnhance: () => Promise<void>;
   aiResult: AiEnhanceResult | null;
   isAiLoading: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  past?: ConfigHistoryEntry[];
+  future?: ConfigHistoryEntry[];
+  onJumpToPast?: (index: number) => void;
+  onJumpToFuture?: (index: number) => void;
 }
 
 const TEMPLATES: { id: NewsTemplate; label: string; desc: string; icon: string }[] = [
-  { id: "breaking", label: "Breaking News", desc: "Urgent red ticker & high contrast", icon: "⚡" },
-  { id: "editorial", label: "Editorial", desc: "Cinematic gradient & category pill", icon: "📰" },
+  { id: "breaking", label: "Classic", desc: "Clean full-bleed photo & bold headline", icon: "📰" },
+  { id: "editorial", label: "Editorial", desc: "Cinematic gradient & category pill", icon: "💎" },
   { id: "split", label: "Split Slate", desc: "Top photo with clean lower news plate", icon: "📊" },
   { id: "quote", label: "Quote Card", desc: "Statement excerpt with quote glyphs", icon: "💬" },
   { id: "magazine", label: "Magazine", desc: "Framed editorial with serif typography", icon: "✨" },
@@ -52,9 +62,9 @@ const ASPECT_RATIOS: { id: AspectRatio; label: string; ratio: string; bestFor: s
 ];
 
 const BADGE_PRESETS = [
-  "BREAKING NEWS",
-  "JUST IN",
   "EXCLUSIVE",
+  "JUST IN",
+  "SPORTS",
   "TECH UPDATE",
   "WORLD NEWS",
   "BUSINESS",
@@ -77,6 +87,14 @@ export const EditorControls: React.FC<EditorControlsProps> = ({
   onGenerateAiEnhance,
   aiResult,
   isAiLoading,
+  canUndo = false,
+  canRedo = false,
+  onUndo = () => {},
+  onRedo = () => {},
+  past = [],
+  future = [],
+  onJumpToPast,
+  onJumpToFuture,
 }) => {
   const [activeTab, setActiveTab] = useState<"content" | "layout" | "branding" | "photo" | "ai">(
     "content"
@@ -93,72 +111,89 @@ export const EditorControls: React.FC<EditorControlsProps> = ({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 bg-slate-50/70 p-1.5 gap-1 overflow-x-auto scrollbar-none">
-        <button
-          type="button"
-          onClick={() => setActiveTab("content")}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-            activeTab === "content"
-              ? "bg-white text-blue-600 shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Type className="w-3.5 h-3.5" />
-          <span>Headline & Text</span>
-        </button>
+      {/* Navigation Tabs and Undo/Redo Controls */}
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 p-1.5 gap-2">
+        <div className="flex gap-1 overflow-x-auto scrollbar-none flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab("content")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              activeTab === "content"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            <Type className="w-3.5 h-3.5" />
+            <span>Headline & Text</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("layout")}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-            activeTab === "layout"
-              ? "bg-white text-blue-600 shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Layout className="w-3.5 h-3.5" />
-          <span>Style & Layout</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("layout")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              activeTab === "layout"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            <Layout className="w-3.5 h-3.5" />
+            <span>Style & Layout</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("branding")}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-            activeTab === "branding"
-              ? "bg-white text-blue-600 shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Branding</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("branding")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              activeTab === "branding"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Branding</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("photo")}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-            activeTab === "photo"
-              ? "bg-white text-blue-600 shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5" />
-          <span>Photo Settings</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("photo")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              activeTab === "photo"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Photo Settings</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("ai")}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-            activeTab === "ai"
-              ? "bg-white text-blue-600 shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>AI Newsroom</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ai")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              activeTab === "ai"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <span>AI Newsroom</span>
+          </button>
+        </div>
+
+        {/* Undo / Redo controls in Editor */}
+        <div className="shrink-0 pl-1 border-l border-slate-200/80">
+          <UndoRedoControls
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            past={past}
+            future={future}
+            onJumpToPast={onJumpToPast}
+            onJumpToFuture={onJumpToFuture}
+            variant="editor"
+          />
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -257,7 +292,7 @@ export const EditorControls: React.FC<EditorControlsProps> = ({
                   type="text"
                   value={config.badge}
                   onChange={(e) => onChange({ badge: e.target.value })}
-                  placeholder="e.g. BREAKING NEWS"
+                  placeholder="None (Optional tag, e.g. SPORTS)"
                   className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
 
@@ -282,6 +317,17 @@ export const EditorControls: React.FC<EditorControlsProps> = ({
 
               {/* Quick badge presets */}
               <div className="flex flex-wrap gap-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onChange({ badge: "" })}
+                  className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase transition cursor-pointer border ${
+                    !config.badge
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200"
+                  }`}
+                >
+                  None (Clean)
+                </button>
                 {BADGE_PRESETS.map((badge) => (
                   <button
                     key={badge}
@@ -296,6 +342,24 @@ export const EditorControls: React.FC<EditorControlsProps> = ({
                     {badge}
                   </button>
                 ))}
+              </div>
+
+              {/* Top Banner Bar Toggle (removed by default) */}
+              <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60">
+                <label className="text-xs text-slate-600 font-medium cursor-pointer flex items-center gap-2 select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!config.showTopBar}
+                    onChange={(e) => onChange({ showTopBar: e.target.checked })}
+                    className="w-3.5 h-3.5 text-red-600 rounded border-slate-300 focus:ring-red-500 cursor-pointer"
+                  />
+                  <span>Show top banner bar</span>
+                </label>
+                {!config.showTopBar ? (
+                  <span className="text-[10px] text-slate-400 font-medium">Clean photo (no top bar)</span>
+                ) : (
+                  <span className="text-[10px] text-red-600 font-bold">Top Bar Active</span>
+                )}
               </div>
             </div>
 

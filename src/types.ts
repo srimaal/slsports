@@ -44,6 +44,7 @@ export interface NewsConfig {
   imageFilter: ImageFilter;
   aspectRatio: AspectRatio;
   template: NewsTemplate;
+  showTopBar?: boolean;
   showWatermark: boolean;
   watermarkText: string;
   activeImageUrl: string;
@@ -69,4 +70,11 @@ export interface AiEnhanceResult {
   badge: string;
   caption: string;
   fbPostCaption: string;
+}
+
+export interface ConfigHistoryEntry {
+  id: string;
+  config: NewsConfig;
+  description: string;
+  timestamp: number;
 }

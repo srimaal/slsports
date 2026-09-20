@@ -1,18 +1,35 @@
 import React from "react";
 import { Newspaper, Sparkles, RefreshCw, Globe } from "lucide-react";
 import { SAMPLE_ARTICLES } from "../data/sampleArticles";
-import { ArticleData } from "../types";
+import { ArticleData, ConfigHistoryEntry } from "../types";
+import { UndoRedoControls } from "./UndoRedoControls";
 
 interface HeaderProps {
   onSelectSample: (article: ArticleData) => void;
   onReset: () => void;
   hasArticle: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  past?: ConfigHistoryEntry[];
+  future?: ConfigHistoryEntry[];
+  onJumpToPast?: (index: number) => void;
+  onJumpToFuture?: (index: number) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onSelectSample,
   onReset,
   hasArticle,
+  canUndo = false,
+  canRedo = false,
+  onUndo = () => {},
+  onRedo = () => {},
+  past = [],
+  future = [],
+  onJumpToPast,
+  onJumpToFuture,
 }) => {
   return (
     <header className="border-b border-slate-200/80 bg-white/95 backdrop-blur sticky top-0 z-30 shadow-xs">
@@ -27,31 +44,46 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-tight">
                 SLSports Card Studio
               </h1>
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
-                slsportscard
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                slsports.lk
               </span>
             </div>
             <p className="text-xs text-slate-500 hidden sm:block">
-              Generate branded SLSports Sri Lanka news cards & viral Facebook graphics
+              Dedicated news card generator for https://slsports.lk/
             </p>
           </div>
         </div>
 
-        {/* Quick Demo selector & Actions */}
+        {/* Undo/Redo & Quick Demo selector & Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Undo / Redo Global Controls */}
+          <UndoRedoControls
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            past={past}
+            future={future}
+            onJumpToPast={onJumpToPast}
+            onJumpToFuture={onJumpToFuture}
+            variant="header"
+          />
+
+          <div className="w-[1px] h-5 bg-slate-200 hidden sm:block" />
+
           {/* Samples Dropdown */}
           <div className="relative group">
             <button
               type="button"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer border border-slate-200/80"
-              title="Try with a sample article"
+              title="Load an slsports.lk article"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Sample Articles</span>
+              <span>slsports.lk Stories</span>
             </button>
             <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 hidden group-hover:block z-40">
               <div className="px-2 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                Click to load sample
+                slsports.lk Featured Articles
               </div>
               {SAMPLE_ARTICLES.map((sample, idx) => (
                 <button

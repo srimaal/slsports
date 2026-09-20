@@ -164,6 +164,75 @@ export async function handleProxyImage(req: any, res: any) {
   }
 }
 
+// Cache for live slsports feed
+let feedCache: { data: any[]; timestamp: number } | null = null;
+
+export async function handleSlSportsFeed(_req: any, res: any) {
+  try {
+    const now = Date.now();
+    if (feedCache && now - feedCache.timestamp < 120000) {
+      return res.json({ success: true, articles: feedCache.data });
+    }
+
+    const response = await fetch("https://slsports.lk/wp-json/wp/v2/posts?_embed&per_page=12", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(7000),
+    });
+
+    if (response.ok) {
+      const posts = await response.json();
+      const articles = posts.map((p: any) => {
+        const rawTitle = p.title?.rendered || "";
+        const cleanTitle = rawTitle
+          .replace(/&amp;/g, "&")
+          .replace(/&#8217;/g, "'")
+          .replace(/&#8211;/g, "-")
+          .replace(/&#038;/g, "&")
+          .replace(/<[^>]+>/g, "")
+          .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
+          .trim();
+
+        const rawExcerpt = p.excerpt?.rendered || "";
+        const cleanDesc = rawExcerpt
+          .replace(/<[^>]+>/g, "")
+          .replace(/&amp;/g, "&")
+          .replace(/&#8217;/g, "'")
+          .replace(/&#8211;/g, "-")
+          .trim();
+
+        const featuredMedia = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;
+
+        return {
+          id: p.id,
+          url: p.link,
+          title: cleanTitle,
+          description: cleanDesc,
+          featuredImage: featuredMedia,
+          candidateImages: featuredMedia ? [featuredMedia] : [],
+          domain: "slsports.lk",
+          siteName: "SL Sports",
+          publishedTime: p.date ? new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent",
+        };
+      });
+
+      feedCache = { data: articles, timestamp: now };
+      return res.json({ success: true, articles });
+    }
+  } catch (err) {
+    console.warn("Could not fetch live slsports.lk feed, serving cached/static:", err);
+  }
+
+  // Fallback to cache if available
+  if (feedCache?.data?.length) {
+    return res.json({ success: true, articles: feedCache.data });
+  }
+
+  return res.json({ success: true, articles: [] });
+}
+
 export async function handleFetchArticle(req: any, res: any) {
   try {
     let body = req.body;
@@ -176,12 +245,21 @@ export async function handleFetchArticle(req: any, res: any) {
     }
     let { url } = body || {};
     if (!url || typeof url !== "string") {
-      return res.status(400).json({ error: "Please provide a valid article URL." });
+      return res.status(400).json({ error: "Please provide a valid slsports.lk article URL." });
     }
 
     url = url.trim();
+
+    // Auto-complete slsports.lk URLs if slug or path is provided
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = "https://" + url;
+      if (url.startsWith("slsports.lk") || url.startsWith("www.slsports.lk")) {
+        url = "https://" + url;
+      } else if (!url.includes(".")) {
+        // e.g. "team-sri-lanka-was-officially-welcomed-to-the-athletes-plaza" or "/team-sri-lanka..."
+        url = "https://slsports.lk/" + url.replace(/^\/+/, "");
+      } else {
+        url = "https://" + url;
+      }
     }
 
     let parsedUrl: URL;
@@ -189,6 +267,32 @@ export async function handleFetchArticle(req: any, res: any) {
       parsedUrl = new URL(url);
     } catch {
       return res.status(400).json({ error: "Invalid URL structure." });
+    }
+
+    // STRICT DOMAIN RESTRICTION: slsports.lk only
+    const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "slsports.lk") {
+      return res.status(400).json({
+        error: "Access restricted: This studio only fetches articles from https://slsports.lk/. Please enter a link to an article on slsports.lk.",
+      });
+    }
+
+    // If root homepage URL provided, automatically pick the latest top post from slsports.lk
+    if (parsedUrl.pathname === "/" || parsedUrl.pathname === "") {
+      try {
+        const wpRes = await fetch("https://slsports.lk/wp-json/wp/v2/posts?_embed&per_page=1", {
+          headers: { "User-Agent": "Mozilla/5.0" },
+        });
+        if (wpRes.ok) {
+          const posts = await wpRes.json();
+          if (posts && posts[0]?.link) {
+            url = posts[0].link;
+            parsedUrl = new URL(url);
+          }
+        }
+      } catch {
+        // proceed with homepage scrape
+      }
     }
 
     const response = await fetch(url, {
@@ -204,7 +308,7 @@ export async function handleFetchArticle(req: any, res: any) {
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: `Failed to load webpage (${response.status}: ${response.statusText}).`,
+        error: `Failed to load webpage from slsports.lk (${response.status}: ${response.statusText}).`,
       });
     }
 
@@ -232,32 +336,35 @@ export async function handleFetchArticle(req: any, res: any) {
       $("title").text().trim() ||
       "";
 
-    // Clean title from common suffix like " | CNN", " - The New York Times"
-    const cleanedTitle = rawTitle.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "").trim() || rawTitle;
+    // Clean title from " - SL Sports" suffix or HTML entities
+    const cleanedTitle = rawTitle
+      .replace(/&amp;/g, "&")
+      .replace(/&#8217;/g, "'")
+      .replace(/&#8211;/g, "-")
+      .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
+      .replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "")
+      .trim() || rawTitle;
 
     // Extract Description / Caption
     const rawDescription =
       $('meta[property="og:description"]').attr("content") ||
       $('meta[name="twitter:description"]').attr("content") ||
       $('meta[name="description"]').attr("content") ||
+      $(".entry-content p").first().text().trim() ||
       $("article p").first().text().trim() ||
       $("main p").first().text().trim() ||
       $("p").first().text().trim() ||
       "";
 
-    // Extract Site Name / Publisher
-    let siteName =
-      $('meta[property="og:site_name"]').attr("content") ||
-      $('meta[name="application-name"]').attr("content") ||
-      "";
+    const cleanDescription = rawDescription
+      .replace(/&amp;/g, "&")
+      .replace(/&#8217;/g, "'")
+      .replace(/&#8211;/g, "-")
+      .replace(/\[\/?vc_[^\]]*\]/g, "")
+      .trim();
 
-    if (!siteName) {
-      const host = parsedUrl.hostname.replace(/^www\./, "");
-      const parts = host.split(".");
-      if (parts.length > 0) {
-        siteName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-      }
-    }
+    // Extract Site Name / Publisher
+    let siteName = "SL Sports";
 
     // Extract Main Featured Image
     let featuredImage =
@@ -274,7 +381,7 @@ export async function handleFetchArticle(req: any, res: any) {
       candidateImages.push(featuredImage);
     }
 
-    $("article img, main img, .article-body img, .entry-content img, img").each((_, el) => {
+    $("article img, main img, .article-body img, .entry-content img, .post-thumbnail img, img").each((_, el) => {
       const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("srcset");
       if (src) {
         const firstSrc = src.split(",")[0].trim().split(" ")[0];
@@ -303,7 +410,7 @@ export async function handleFetchArticle(req: any, res: any) {
       $('meta[name="author"]').attr("content") ||
       $('meta[property="article:author"]').attr("content") ||
       $(".author").first().text().trim() ||
-      "";
+      "SL Sports Desk";
 
     const publishedTime =
       $('meta[property="article:published_time"]').attr("content") ||
@@ -316,18 +423,18 @@ export async function handleFetchArticle(req: any, res: any) {
     const favicon =
       resolveUrl($('link[rel="icon"]').attr("href")) ||
       resolveUrl($('link[rel="shortcut icon"]').attr("href")) ||
-      `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=128`;
+      `https://www.google.com/s2/favicons?domain=slsports.lk&sz=128`;
 
     return res.json({
       success: true,
       url,
-      domain: parsedUrl.hostname.replace(/^www\./, ""),
-      title: cleanedTitle || rawTitle || "Breaking News Headline",
+      domain: "slsports.lk",
+      title: cleanedTitle || rawTitle || "SL Sports Breaking Story",
       originalTitle: rawTitle,
-      description: rawDescription || "Read the full coverage and latest details on this developing story.",
+      description: cleanDescription || "Read the latest developing sports coverage and full match details on slsports.lk.",
       featuredImage,
       candidateImages,
-      siteName: siteName || parsedUrl.hostname,
+      siteName: siteName,
       author,
       publishedTime,
       favicon,
@@ -335,7 +442,7 @@ export async function handleFetchArticle(req: any, res: any) {
   } catch (err: any) {
     console.error("Fetch article error:", err);
     return res.status(500).json({
-      error: "Failed to fetch article: " + (err.message || String(err)),
+      error: "Failed to fetch article from slsports.lk: " + (err.message || String(err)),
     });
   }
 }
@@ -450,6 +557,9 @@ export function registerApiRoutes(app: Express) {
 
   app.get("/api/proxy-image", handleProxyImage);
   app.get("/proxy-image", handleProxyImage);
+
+  app.get("/api/slsports-feed", handleSlSportsFeed);
+  app.get("/slsports-feed", handleSlSportsFeed);
 
   app.post("/api/fetch-article", handleFetchArticle);
   app.post("/fetch-article", handleFetchArticle);

@@ -14,17 +14,34 @@ import {
   MoreHorizontal,
   Globe,
 } from "lucide-react";
-import { NewsConfig, AspectRatio, AiEnhanceResult } from "../types";
+import { NewsConfig, AspectRatio, AiEnhanceResult, ConfigHistoryEntry } from "../types";
 import { renderNewsCardToCanvas, getCanvasDimensions } from "../utils/canvasRenderer";
+import { UndoRedoControls } from "./UndoRedoControls";
 
 interface NewsPreviewCanvasProps {
   config: NewsConfig;
   aiResult: AiEnhanceResult | null;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  past?: ConfigHistoryEntry[];
+  future?: ConfigHistoryEntry[];
+  onJumpToPast?: (index: number) => void;
+  onJumpToFuture?: (index: number) => void;
 }
 
 export const NewsPreviewCanvas: React.FC<NewsPreviewCanvasProps> = ({
   config,
   aiResult,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  past,
+  future,
+  onJumpToPast,
+  onJumpToFuture,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isRendering, setIsRendering] = useState(false);
@@ -127,6 +144,20 @@ export const NewsPreviewCanvas: React.FC<NewsPreviewCanvasProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {canUndo !== undefined && (
+            <UndoRedoControls
+              canUndo={canUndo}
+              canRedo={canRedo || false}
+              onUndo={onUndo || (() => {})}
+              onRedo={onRedo || (() => {})}
+              past={past || []}
+              future={future || []}
+              onJumpToPast={onJumpToPast}
+              onJumpToFuture={onJumpToFuture}
+              variant="compact"
+            />
+          )}
+
           <button
             type="button"
             onClick={() => setShowFeedMock(!showFeedMock)}

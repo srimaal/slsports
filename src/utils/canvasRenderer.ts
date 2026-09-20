@@ -250,27 +250,29 @@ function renderBreakingTemplate(
   ctx.fillStyle = overlay;
   ctx.fillRect(0, 0, width, height);
 
-  // Top or upper BREAKING NEWS Bar
-  const barY = 40;
-  const barH = 68;
-  const barW = width - 80;
+  // Top BREAKING NEWS Bar (only if explicitly enabled)
+  if (config.showTopBar) {
+    const barY = 40;
+    const barH = 68;
+    const barW = width - 80;
 
-  // Red accent bar
-  ctx.fillStyle = config.badgeColor || "#DC2626";
-  ctx.fillRect(40, barY, barW, barH);
+    // Accent bar
+    ctx.fillStyle = config.badgeColor || "#DC2626";
+    ctx.fillRect(40, barY, barW, barH);
 
-  // Top Bar Content
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "800 32px 'Oswald', 'Plus Jakarta Sans', sans-serif";
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  ctx.fillText(`⚡ ${config.badge.toUpperCase() || "BREAKING NEWS"}`, 65, barY + barH / 2);
+    // Top Bar Content
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "800 32px 'Oswald', 'Plus Jakarta Sans', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillText(`⚡ ${config.badge.toUpperCase() || "NEWS UPDATE"}`, 65, barY + barH / 2);
 
-  // Source on right side of bar
-  ctx.font = "700 22px 'Plus Jakarta Sans', sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillText(config.publisherName || "NEWS DESK", width - 65, barY + barH / 2);
+    // Source on right side of bar
+    ctx.font = "700 22px 'Plus Jakarta Sans', sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillText(config.publisherName || "NEWS DESK", width - 65, barY + barH / 2);
+  }
 
   // Headline Typography
   const paddingX = 60;
@@ -297,22 +299,54 @@ function renderBreakingTemplate(
   const captionLineH = 42;
   const totalCaptionH = captionLines.length * captionLineH;
 
+  // Badge pill (when top bar is off, show a sleek pill above the headline if badge exists)
+  const hasBadgePill = !config.showTopBar && Boolean(config.badge?.trim());
+  const badgeH = 40;
+  const badgeMargin = 16;
+
   // Footer bar height
   const footerH = getTemplateFooterHeight(height, config, 80);
-  const startY = height - footerH - totalCaptionH - (totalCaptionH ? 30 : 0) - totalHeadlineH - 50;
+  const startY =
+    height -
+    footerH -
+    totalCaptionH -
+    (totalCaptionH ? 30 : 0) -
+    totalHeadlineH -
+    (hasBadgePill ? badgeH + badgeMargin : 0) -
+    50;
+
+  // Render badge pill above headline if top bar is removed
+  if (hasBadgePill) {
+    const badgeText = config.badge.trim().toUpperCase();
+    ctx.save();
+    ctx.font = "800 20px 'Plus Jakarta Sans', sans-serif";
+    const badgeW = ctx.measureText(badgeText).width + 32;
+    ctx.fillStyle = config.badgeColor || "#DC2626";
+    ctx.beginPath();
+    ctx.roundRect(paddingX, startY, badgeW, badgeH, 6);
+    ctx.fill();
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText(badgeText, paddingX + badgeW / 2, startY + badgeH / 2);
+    ctx.restore();
+  }
+
+  const headlineStartY = hasBadgePill ? startY + badgeH + badgeMargin : startY;
 
   // Draw Headline lines
   ctx.font = `800 ${headlinePx}px ${fontChoice}`;
   ctx.fillStyle = "#FFFFFF";
   headlineLines.forEach((line, idx) => {
-    ctx.fillText(line, paddingX, startY + idx * lineHeight);
+    ctx.fillText(line, paddingX, headlineStartY + idx * lineHeight);
   });
 
   // Draw Caption lines
   if (captionLines.length > 0) {
     ctx.font = "500 28px 'Plus Jakarta Sans', sans-serif";
     ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
-    const capStartY = startY + totalHeadlineH + 24;
+    const capStartY = headlineStartY + totalHeadlineH + 24;
     captionLines.forEach((line, idx) => {
       ctx.fillText(line, paddingX, capStartY + idx * captionLineH);
     });
@@ -344,8 +378,9 @@ function renderEditorialTemplate(
   const fontChoice = getFontFamilyString(config.fontFamily);
   const headlinePx = getHeadlinePixelSize(config.headlineSize, height);
 
-  // Badge pill
-  const badgeText = (config.badge || "SPECIAL REPORT").toUpperCase();
+  // Badge pill (only rendered if badge is set)
+  const hasBadge = Boolean(config.badge && config.badge.trim());
+  const badgeText = (config.badge || "").trim().toUpperCase();
   ctx.font = "800 22px 'Plus Jakarta Sans', sans-serif";
   const badgeMetrics = ctx.measureText(badgeText);
   const badgeW = badgeMetrics.width + 36;
@@ -362,21 +397,30 @@ function renderEditorialTemplate(
   const totalCaptionH = captionLines.length * captionLineH;
 
   const footerH = getTemplateFooterHeight(height, config, 90);
-  const startY = height - footerH - totalCaptionH - (totalCaptionH ? 26 : 0) - totalHeadlineH - badgeH - 30;
+  const startY =
+    height -
+    footerH -
+    totalCaptionH -
+    (totalCaptionH ? 26 : 0) -
+    totalHeadlineH -
+    (hasBadge ? badgeH + 30 : 0) -
+    30;
 
-  // Draw Pill
-  ctx.save();
-  ctx.fillStyle = config.badgeColor || "#2563EB";
-  ctx.beginPath();
-  ctx.roundRect(paddingX, startY, badgeW, badgeH, 8);
-  ctx.fill();
+  // Draw Pill only if badge exists
+  if (hasBadge) {
+    ctx.save();
+    ctx.fillStyle = config.badgeColor || "#2563EB";
+    ctx.beginPath();
+    ctx.roundRect(paddingX, startY, badgeW, badgeH, 8);
+    ctx.fill();
 
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "800 20px 'Plus Jakarta Sans', sans-serif";
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "center";
-  ctx.fillText(badgeText, paddingX + badgeW / 2, startY + badgeH / 2);
-  ctx.restore();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "800 20px 'Plus Jakarta Sans', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText(badgeText, paddingX + badgeW / 2, startY + badgeH / 2);
+    ctx.restore();
+  }
 
   // Headline
   ctx.save();
@@ -386,7 +430,7 @@ function renderEditorialTemplate(
   ctx.textBaseline = "top";
   ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
   ctx.shadowBlur = 10;
-  const headlineStartY = startY + badgeH + 22;
+  const headlineStartY = hasBadge ? startY + badgeH + 22 : startY;
   headlineLines.forEach((line, idx) => {
     ctx.fillText(line, paddingX, headlineStartY + idx * lineHeight);
   });
@@ -424,9 +468,11 @@ function renderSplitTemplate(
   ctx.fillStyle = "#0B1120"; // Deep solid slate
   ctx.fillRect(0, slateTop, width, slateH);
 
-  // Colored top accent border on the slate
-  ctx.fillStyle = config.badgeColor || "#E11D48";
-  ctx.fillRect(0, slateTop, width, 8);
+  // Colored top accent border on the slate (only if enabled)
+  if (config.showTopBar) {
+    ctx.fillStyle = config.badgeColor || "#E11D48";
+    ctx.fillRect(0, slateTop, width, 8);
+  }
   ctx.restore();
 
   const paddingX = 64;
@@ -441,7 +487,8 @@ function renderSplitTemplate(
   ctx.font = "800 22px 'Plus Jakarta Sans', sans-serif";
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.fillText(config.badge.toUpperCase() || "NEWS DESK", paddingX, metaY);
+  const sourceLabel = config.badge?.trim() ? config.badge.toUpperCase() : (config.publisherName || "NEWS DESK");
+  ctx.fillText(sourceLabel, paddingX, metaY);
 
   if (config.customDate && config.showDate) {
     ctx.fillStyle = "#94A3B8";

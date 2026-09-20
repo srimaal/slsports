@@ -8,9 +8,45 @@ import { Header } from "./components/Header";
 import { UrlFetcher } from "./components/UrlFetcher";
 import { EditorControls } from "./components/EditorControls";
 import { NewsPreviewCanvas } from "./components/NewsPreviewCanvas";
+import { HistoryToast } from "./components/HistoryToast";
 import { ArticleData, NewsConfig, AiEnhanceResult } from "./types";
 import { SAMPLE_ARTICLES } from "./data/sampleArticles";
 import { DEFAULT_SLSPORTS_LOGO_URL } from "./utils/logoAsset";
+import { useConfigHistory } from "./hooks/useConfigHistory";
+
+const INITIAL_CONFIG: NewsConfig = {
+  headline: "16-Year-Old Nuyara Earns the Honor of Carrying the Sri Lankan Flag at the 20th Asian Games!",
+  caption: "16-year-old Nuyara Fernando has been awarded the historic honor of leading the Sri Lankan contingent while carrying the national flag at the 20th Asian Games.",
+  badge: "BREAKING NEWS",
+  badgeColor: "#DC2626",
+  publisherName: "SL Sports",
+  publisherHandle: "@slsports_lk",
+  isVerified: true,
+  showDate: true,
+  customDate: "Today",
+  fontFamily: "impact",
+  headlineSize: "md",
+  overlayOpacity: 80,
+  imageZoom: 100,
+  imageOffsetY: 0,
+  imageFilter: "cinematic",
+  aspectRatio: "1:1",
+  template: "breaking",
+  showTopBar: false,
+  showWatermark: true,
+  watermarkText: "slsports.lk",
+  activeImageUrl: "https://slsports.lk/wp-content/uploads/2026/09/asa-2026-09-18.jpg",
+  quoteAuthor: "SL Sports Desk",
+  showCommentCallout: true,
+  commentCalloutText: "for more details please check the link in first comment",
+  commentCalloutBg: "#DC2626",
+  commentCalloutUppercase: true,
+  commentCalloutStyle: "solid-bar",
+  showLogo: true,
+  logoUrl: DEFAULT_SLSPORTS_LOGO_URL,
+  logoPosition: "bottom-left",
+  logoSize: "md",
+};
 
 export default function App() {
   const [currentArticle, setCurrentArticle] = useState<ArticleData | null>(null);
@@ -18,49 +54,31 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AiEnhanceResult | null>(null);
 
-  // Default configuration
-  const [config, setConfig] = useState<NewsConfig>({
-    headline: "Engineers Achieve 1,000-Mile EV Range With Revolutionary Solid-State Battery",
-    caption: "Commercial prototype delivers 10-minute full recharge without degradation across 2,000 continuous laboratory charge cycles.",
-    badge: "TECH BREAKTHROUGH",
-    badgeColor: "#DC2626",
-    publisherName: "TechCrunch",
-    publisherHandle: "@techcrunch",
-    isVerified: true,
-    showDate: true,
-    customDate: "Today",
-    fontFamily: "impact",
-    headlineSize: "md",
-    overlayOpacity: 80,
-    imageZoom: 100,
-    imageOffsetY: 0,
-    imageFilter: "cinematic",
-    aspectRatio: "1:1",
-    template: "breaking",
-    showWatermark: true,
-    watermarkText: "techcrunch.com",
-    activeImageUrl: "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?q=80&w=1200&auto=format&fit=crop",
-    quoteAuthor: "Elena Rostova, Senior Materials Scientist",
-    showCommentCallout: true,
-    commentCalloutText: "for more details please check the link in first comment",
-    commentCalloutBg: "#DC2626",
-    commentCalloutUppercase: true,
-    commentCalloutStyle: "solid-bar",
-    showLogo: true,
-    logoUrl: DEFAULT_SLSPORTS_LOGO_URL,
-    logoPosition: "bottom-left",
-    logoSize: "md",
-  });
+  // Undo / Redo Configuration History State Management
+  const {
+    config,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    updateConfig,
+    resetConfig,
+    past,
+    future,
+    lastAction,
+    jumpToPast,
+    jumpToFuture,
+  } = useConfigHistory(INITIAL_CONFIG);
 
   // Load the initial sample article on startup so the app is instantly engaging
   useEffect(() => {
-    const initial = SAMPLE_ARTICLES[1].data;
+    const initial = SAMPLE_ARTICLES[0].data;
     setCurrentArticle(initial);
   }, []);
 
   // Update configuration helper
-  const handleConfigChange = (updates: Partial<NewsConfig>) => {
-    setConfig((prev) => ({ ...prev, ...updates }));
+  const handleConfigChange = (updates: Partial<NewsConfig>, actionDescription?: string) => {
+    updateConfig(updates, actionDescription);
   };
 
   // When a new article is fetched or selected from samples
@@ -72,23 +90,26 @@ export default function App() {
       const cleanDesc = article.description || "";
       const chosenImg = article.featuredImage || (article.candidateImages && article.candidateImages[0]) || "";
 
-      setConfig((prev) => ({
-        ...prev,
-        headline: cleanTitle,
-        caption: cleanDesc.slice(0, 180),
-        publisherName: article.siteName || article.domain || "News Desk",
-        publisherHandle: `@${article.domain.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "")}`,
-        customDate: article.publishedTime || "Just now",
-        watermarkText: article.domain || "",
-        activeImageUrl: chosenImg || prev.activeImageUrl,
-        badge: "BREAKING NEWS",
-        quoteAuthor: article.author || article.siteName || "",
-      }));
+      resetConfig(
+        {
+          ...config,
+          headline: cleanTitle,
+          caption: cleanDesc.slice(0, 180),
+          publisherName: "SL Sports",
+          publisherHandle: "@slsports_lk",
+          customDate: article.publishedTime || "Today",
+          watermarkText: "slsports.lk",
+          activeImageUrl: chosenImg || config.activeImageUrl,
+          badge: "",
+          quoteAuthor: article.author || "SL Sports Desk",
+        },
+        `Load Article: ${cleanTitle.slice(0, 32)}...`
+      );
 
       // Trigger AI enhancement for the newly loaded article
       triggerAiEnhance(cleanTitle, cleanDesc, article.siteName || article.domain);
     },
-    []
+    [config, resetConfig]
   );
 
   // Trigger AI newsroom enhancements
@@ -121,7 +142,7 @@ export default function App() {
         if (json.success && json.data) {
           setAiResult(json.data);
           if (json.data.badge) {
-            handleConfigChange({ badge: json.data.badge });
+            handleConfigChange({ badge: json.data.badge }, "AI Badge Suggestion");
           }
         }
       }
@@ -135,15 +156,27 @@ export default function App() {
   const handleReset = () => {
     setCurrentArticle(null);
     setAiResult(null);
+    resetConfig(INITIAL_CONFIG, "Reset to Default Studio Template");
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
+      {/* Undo/Redo Action Toast */}
+      <HistoryToast lastAction={lastAction} />
+
       {/* Top App Header */}
       <Header
         onSelectSample={handleArticleLoaded}
         onReset={handleReset}
         hasArticle={!!currentArticle}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
+        past={past}
+        future={future}
+        onJumpToPast={jumpToPast}
+        onJumpToFuture={jumpToFuture}
       />
 
       {/* Main Workspace Content */}
@@ -155,7 +188,7 @@ export default function App() {
           setIsLoading={setIsLoadingArticle}
           currentArticle={currentArticle}
           activeImageUrl={config.activeImageUrl}
-          onSelectImage={(imgUrl) => handleConfigChange({ activeImageUrl: imgUrl })}
+          onSelectImage={(imgUrl) => handleConfigChange({ activeImageUrl: imgUrl }, "Change Featured Photo")}
         />
 
         {/* Studio Grid: Editor Controls (Left) & Canvas Preview (Right) */}
@@ -168,12 +201,31 @@ export default function App() {
               onGenerateAiEnhance={() => triggerAiEnhance()}
               aiResult={aiResult}
               isAiLoading={isAiLoading}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={undo}
+              onRedo={redo}
+              past={past}
+              future={future}
+              onJumpToPast={jumpToPast}
+              onJumpToFuture={jumpToFuture}
             />
           </div>
 
           {/* Right Column: High-Resolution Canvas Preview & Export */}
           <div className="lg:col-span-6 xl:col-span-7 order-1 lg:order-2 lg:sticky lg:top-20">
-            <NewsPreviewCanvas config={config} aiResult={aiResult} />
+            <NewsPreviewCanvas
+              config={config}
+              aiResult={aiResult}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={undo}
+              onRedo={redo}
+              past={past}
+              future={future}
+              onJumpToPast={jumpToPast}
+              onJumpToFuture={jumpToFuture}
+            />
           </div>
         </div>
       </main>

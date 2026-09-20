@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Link as LinkIcon,
   Search,
@@ -8,7 +8,9 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   ExternalLink,
-  ChevronRight,
+  ShieldCheck,
+  RefreshCw,
+  Flame,
 } from "lucide-react";
 import { ArticleData } from "../types";
 import { SAMPLE_ARTICLES } from "../data/sampleArticles";
@@ -23,6 +25,41 @@ interface UrlFetcherProps {
   onSelectImage: (imageUrl: string) => void;
 }
 
+// Helper to normalize and validate slsports.lk URLs
+export function normalizeSlSportsUrl(rawInput: string): { url: string; isValid: boolean; reason?: string } {
+  let trimmed = rawInput.trim();
+  if (!trimmed) {
+    return { url: "", isValid: false, reason: "Please enter an article URL or slug from slsports.lk" };
+  }
+
+  // Prepend scheme if missing
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    if (trimmed.startsWith("slsports.lk") || trimmed.startsWith("www.slsports.lk")) {
+      trimmed = "https://" + trimmed;
+    } else if (!trimmed.includes(".")) {
+      // User entered slug or path like "team-sri-lanka..." or "/team-sri-lanka..."
+      trimmed = "https://slsports.lk/" + trimmed.replace(/^\/+/, "");
+    } else {
+      trimmed = "https://" + trimmed;
+    }
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "slsports.lk") {
+      return {
+        url: trimmed,
+        isValid: false,
+        reason: `Only articles on https://slsports.lk/ can be fetched. "${host}" is not supported.`,
+      };
+    }
+    return { url: trimmed, isValid: true };
+  } catch {
+    return { url: trimmed, isValid: false, reason: "Invalid URL structure." };
+  }
+}
+
 export const UrlFetcher: React.FC<UrlFetcherProps> = ({
   onArticleFetched,
   isLoading,
@@ -34,21 +71,54 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
   const [inputUrl, setInputUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fetchStatusStep, setFetchStatusStep] = useState<string>("");
+  const [liveArticles, setLiveArticles] = useState<ArticleData[]>([]);
+  const [isLoadingFeed, setIsLoadingFeed] = useState<boolean>(false);
+  const [showLiveDrawer, setShowLiveDrawer] = useState<boolean>(false);
+
+  // Fetch live articles from slsports.lk feed
+  const loadLiveFeed = async () => {
+    setIsLoadingFeed(true);
+    try {
+      const res = await fetch("/api/slsports-feed");
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.articles) && data.articles.length > 0) {
+          setLiveArticles(data.articles);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not load live slsports.lk feed:", err);
+    } finally {
+      setIsLoadingFeed(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLiveFeed();
+  }, []);
 
   const handleFetch = async (urlToFetch?: string) => {
-    const targetUrl = (urlToFetch || inputUrl).trim();
-    if (!targetUrl) {
-      setErrorMessage("Please enter an article URL (e.g. https://edition.cnn.com/...)");
+    const rawTarget = (urlToFetch || inputUrl).trim();
+    if (!rawTarget) {
+      setErrorMessage("Please enter an article URL from https://slsports.lk/");
       return;
     }
 
+    // STRICT DOMAIN RESTRICTION CHECK
+    const check = normalizeSlSportsUrl(rawTarget);
+    if (!check.isValid) {
+      setErrorMessage(check.reason || "Only articles from https://slsports.lk/ are allowed.");
+      return;
+    }
+
+    const targetUrl = check.url;
     setErrorMessage(null);
     setIsLoading(true);
-    setFetchStatusStep("Connecting to website...");
+    setFetchStatusStep("Connecting to slsports.lk...");
 
     try {
-      const timer1 = setTimeout(() => setFetchStatusStep("Parsing OpenGraph metadata & article headers..."), 400);
-      const timer2 = setTimeout(() => setFetchStatusStep("Extracting lead image and news caption..."), 900);
+      const timer1 = setTimeout(() => setFetchStatusStep("Parsing SL Sports metadata & story headers..."), 400);
+      const timer2 = setTimeout(() => setFetchStatusStep("Extracting lead sports photo and match details..."), 900);
 
       let articleData: ArticleData | null = null;
 
@@ -67,15 +137,20 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
           const data = await res.json();
           if (res.ok && data?.success) {
             articleData = data;
+          } else if (data?.error) {
+            throw new Error(data.error);
           }
         }
-      } catch (networkErr) {
-        console.warn("Server API fetch warning, attempting fallback...", networkErr);
+      } catch (networkErr: any) {
+        if (networkErr?.message && networkErr.message.includes("slsports.lk")) {
+          throw networkErr;
+        }
+        console.warn("Server API fetch warning, attempting client fallback...", networkErr);
       }
 
       // If server API was unavailable, returned HTML, or failed, use client-side extractor
       if (!articleData) {
-        setFetchStatusStep("Extracting article metadata directly...");
+        setFetchStatusStep("Extracting article directly from slsports.lk...");
         articleData = await extractArticleClientSide(targetUrl);
       }
 
@@ -83,13 +158,13 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
         onArticleFetched(articleData);
         setInputUrl(targetUrl);
       } else {
-        throw new Error("Could not extract article details from this URL.");
+        throw new Error("Could not extract article details from this slsports.lk link.");
       }
     } catch (err: any) {
       console.error("Fetch error:", err);
       setErrorMessage(
         err?.message ||
-          "Could not read article from this URL. Make sure the link is public, or try one of the sample articles below."
+          "Could not read article from slsports.lk. Make sure the link is live on https://slsports.lk/."
       );
     } finally {
       setIsLoading(false);
@@ -126,9 +201,25 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-6 transition">
       {/* Search Input Bar */}
       <div className="space-y-3">
-        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-          Article Website URL
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider">
+            <span>SL Sports Article URL</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+              slsports.lk only
+            </span>
+          </label>
+          <a
+            href="https://slsports.lk/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline flex items-center gap-1"
+          >
+            <span>Open slsports.lk</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -136,7 +227,7 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
             </div>
             <input
               type="url"
-              placeholder="Paste article URL (e.g. https://www.bbc.com/news/...)"
+              placeholder="https://slsports.lk/team-sri-lanka... or article slug"
               value={inputUrl}
               onChange={(e) => {
                 setInputUrl(e.target.value);
@@ -171,7 +262,7 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
             {isLoading ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Fetching...</span>
+                <span>Fetching SL Sports...</span>
               </>
             ) : (
               <>
@@ -192,22 +283,25 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
 
         {/* Error message */}
         {errorMessage && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700 animate-fadeIn">
             <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold">Unable to fetch website</p>
+              <p className="font-semibold">Domain Restriction</p>
               <p className="mt-0.5 text-red-600">{errorMessage}</p>
+              <p className="mt-1 text-[11px] text-red-500">
+                Tip: Only articles hosted on <a href="https://slsports.lk" target="_blank" rel="noreferrer" className="underline font-bold">https://slsports.lk/</a> are supported by this studio.
+              </p>
             </div>
           </div>
         )}
 
-        {/* Quick sample chips */}
+        {/* Quick SLSports articles selector */}
         <div className="pt-1 flex items-center flex-wrap gap-1.5 text-xs">
           <span className="text-slate-600 font-medium mr-1 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-500" />
-            Try quick sample:
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            Featured slsports.lk stories:
           </span>
-          {SAMPLE_ARTICLES.map((sample, idx) => (
+          {SAMPLE_ARTICLES.slice(0, 4).map((sample, idx) => (
             <button
               key={idx}
               type="button"
@@ -216,12 +310,80 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
                 onArticleFetched(sample.data);
                 setErrorMessage(null);
               }}
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition cursor-pointer border border-slate-200/60"
+              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 text-xs font-medium transition cursor-pointer border border-slate-200/60 flex items-center gap-1"
             >
-              {sample.label}
+              <span>{sample.label}</span>
             </button>
           ))}
+
+          {liveArticles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowLiveDrawer(!showLiveDrawer)}
+              className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition cursor-pointer border border-blue-200/60 flex items-center gap-1"
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-500" />
+              <span>{showLiveDrawer ? "Hide Live Feed" : `More live stories (${liveArticles.length})`}</span>
+            </button>
+          )}
         </div>
+
+        {/* Expandable Live Feed from SLSports.lk */}
+        {showLiveDrawer && liveArticles.length > 0 && (
+          <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                Latest Stories Directly From slsports.lk
+              </span>
+              <button
+                type="button"
+                onClick={loadLiveFeed}
+                disabled={isLoadingFeed}
+                className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingFeed ? "animate-spin" : ""}`} />
+                <span>Refresh Feed</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+              {liveArticles.map((art, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setInputUrl(art.url);
+                    handleFetch(art.url);
+                  }}
+                  className="text-left p-2 rounded-lg bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition cursor-pointer flex gap-2.5 items-start group"
+                >
+                  {art.featuredImage ? (
+                    <img
+                      src={`/api/proxy-image?url=${encodeURIComponent(art.featuredImage)}`}
+                      alt=""
+                      className="w-12 h-12 rounded object-cover shrink-0"
+                      onError={(e) => {
+                        e.currentTarget.src = art.featuredImage!;
+                      }}
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
+                      <ImageIcon className="w-4 h-4" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-800 line-clamp-2 group-hover:text-blue-600">
+                      {art.title}
+                    </p>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      {art.publishedTime || "slsports.lk"}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Extracted Article Status & Image Selector */}

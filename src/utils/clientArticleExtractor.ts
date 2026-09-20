@@ -6,12 +6,25 @@ import { ArticleData } from "../types";
  */
 export async function extractArticleClientSide(inputUrl: string): Promise<ArticleData> {
   let url = inputUrl.trim();
+
+  // Auto-complete slsports.lk URLs if slug or path is provided
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = "https://" + url;
+    if (url.startsWith("slsports.lk") || url.startsWith("www.slsports.lk")) {
+      url = "https://" + url;
+    } else if (!url.includes(".")) {
+      url = "https://slsports.lk/" + url.replace(/^\/+/, "");
+    } else {
+      url = "https://" + url;
+    }
   }
 
   const parsedUrl = new URL(url);
-  const domain = parsedUrl.hostname.replace(/^www\./, "");
+  const domain = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
+
+  // Strict domain validation
+  if (domain !== "slsports.lk") {
+    throw new Error("Only articles from https://slsports.lk/ are supported. Please paste a link from slsports.lk.");
+  }
 
   // Candidate proxy URLs
   const proxyEndpoints = [
@@ -90,20 +103,20 @@ export async function extractArticleClientSide(inputUrl: string): Promise<Articl
     doc.title?.trim() ||
     "Breaking News Headline";
 
-  const cleanTitle = rawTitle.replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "").trim() || rawTitle;
+  const cleanTitle = rawTitle
+    .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
+    .replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "")
+    .trim() || rawTitle;
 
   const rawDescription =
     getMeta(["og:description", "twitter:description", "description"]) ||
+    doc.querySelector(".entry-content p")?.textContent?.trim() ||
     doc.querySelector("article p")?.textContent?.trim() ||
     doc.querySelector("main p")?.textContent?.trim() ||
     doc.querySelector("p")?.textContent?.trim() ||
     "";
 
-  let siteName = getMeta(["og:site_name", "application-name"]);
-  if (!siteName) {
-    const capitalized = domain.split(".")[0];
-    siteName = capitalized.charAt(0).toUpperCase() + capitalized.slice(1);
-  }
+  let siteName = "SL Sports";
 
   const featuredImage =
     resolveUrl(getMeta(["og:image:secure_url", "og:image", "twitter:image:src", "twitter:image"])) ||
