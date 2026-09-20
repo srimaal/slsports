@@ -164,6 +164,37 @@ export async function handleProxyImage(req: any, res: any) {
   }
 }
 
+// Helper for safe JSON parsing without throwing SyntaxError
+function safeParseJson<T = any>(text: string | null | undefined): T | null {
+  if (!text || typeof text !== "string") return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
+}
+
+// Convert URL slug to human-readable capitalized title
+function slugToTitle(slug: string): string {
+  if (!slug) return "SL Sports News Update";
+  const clean = slug
+    .replace(/^https?:\/\/[^/]+\//i, "")
+    .replace(/\/+$/, "")
+    .split("/")
+    .pop()!
+    .replace(/[?#].*$/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!clean) return "SL Sports News Update";
+  return clean.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // Cache for live slsports feed
 let feedCache: { data: any[]; timestamp: number } | null = null;
 
@@ -179,47 +210,50 @@ export async function handleSlSportsFeed(_req: any, res: any) {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         Accept: "application/json",
       },
-      signal: AbortSignal.timeout(7000),
+      signal: AbortSignal.timeout(6000),
     });
 
     if (response.ok) {
-      const posts = await response.json();
-      const articles = posts.map((p: any) => {
-        const rawTitle = p.title?.rendered || "";
-        const cleanTitle = rawTitle
-          .replace(/&amp;/g, "&")
-          .replace(/&#8217;/g, "'")
-          .replace(/&#8211;/g, "-")
-          .replace(/&#038;/g, "&")
-          .replace(/<[^>]+>/g, "")
-          .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
-          .trim();
+      const text = await response.text();
+      const posts = safeParseJson<any[]>(text);
+      if (Array.isArray(posts) && posts.length > 0) {
+        const articles = posts.map((p: any) => {
+          const rawTitle = p.title?.rendered || "";
+          const cleanTitle = rawTitle
+            .replace(/&amp;/g, "&")
+            .replace(/&#8217;/g, "'")
+            .replace(/&#8211;/g, "-")
+            .replace(/&#038;/g, "&")
+            .replace(/<[^>]+>/g, "")
+            .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
+            .trim();
 
-        const rawExcerpt = p.excerpt?.rendered || "";
-        const cleanDesc = rawExcerpt
-          .replace(/<[^>]+>/g, "")
-          .replace(/&amp;/g, "&")
-          .replace(/&#8217;/g, "'")
-          .replace(/&#8211;/g, "-")
-          .trim();
+          const rawExcerpt = p.excerpt?.rendered || "";
+          const cleanDesc = rawExcerpt
+            .replace(/<[^>]+>/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&#8217;/g, "'")
+            .replace(/&#8211;/g, "-")
+            .trim();
 
-        const featuredMedia = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;
+          const featuredMedia = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;
 
-        return {
-          id: p.id,
-          url: p.link,
-          title: cleanTitle,
-          description: cleanDesc,
-          featuredImage: featuredMedia,
-          candidateImages: featuredMedia ? [featuredMedia] : [],
-          domain: "slsports.lk",
-          siteName: "SL Sports",
-          publishedTime: p.date ? new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent",
-        };
-      });
+          return {
+            id: p.id,
+            url: p.link,
+            title: cleanTitle,
+            description: cleanDesc,
+            featuredImage: featuredMedia,
+            candidateImages: featuredMedia ? [featuredMedia] : [],
+            domain: "slsports.lk",
+            siteName: "SL Sports",
+            publishedTime: p.date ? new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent",
+          };
+        });
 
-      feedCache = { data: articles, timestamp: now };
-      return res.json({ success: true, articles });
+        feedCache = { data: articles, timestamp: now };
+        return res.json({ success: true, articles });
+      }
     }
   } catch (err) {
     console.warn("Could not fetch live slsports.lk feed, serving cached/static:", err);
@@ -234,6 +268,7 @@ export async function handleSlSportsFeed(_req: any, res: any) {
 }
 
 export async function handleFetchArticle(req: any, res: any) {
+  let requestedUrl = "";
   try {
     let body = req.body;
     if (typeof body === "string") {
@@ -249,6 +284,7 @@ export async function handleFetchArticle(req: any, res: any) {
     }
 
     url = url.trim();
+    requestedUrl = url;
 
     // Auto-complete slsports.lk URLs if slug or path is provided
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -277,15 +313,86 @@ export async function handleFetchArticle(req: any, res: any) {
       });
     }
 
+    const pathSegments = parsedUrl.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+    const slug = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : "";
+
+    // 1. FAST PATH: If we have an article slug, query the WordPress REST API directly
+    if (slug && slug !== "wp-admin" && slug !== "feed") {
+      try {
+        const wpRes = await fetch(
+          `https://slsports.lk/wp-json/wp/v2/posts?slug=${encodeURIComponent(slug)}&_embed`,
+          {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              Accept: "application/json",
+            },
+            signal: AbortSignal.timeout(5000),
+          }
+        );
+
+        if (wpRes.ok) {
+          const wpText = await wpRes.text();
+          const posts = safeParseJson<any[]>(wpText);
+          if (Array.isArray(posts) && posts.length > 0) {
+            const p = posts[0];
+            const cleanTitle = (p.title?.rendered || "")
+              .replace(/&amp;/g, "&")
+              .replace(/&#8217;/g, "'")
+              .replace(/&#8211;/g, "-")
+              .replace(/&#038;/g, "&")
+              .replace(/<[^>]+>/g, "")
+              .replace(/\s*[|\-–—]\s*SL\s*Sports.*$/i, "")
+              .replace(/\s*[|\-–—]\s*[^|\-–—]+$/, "")
+              .trim();
+
+            const cleanDesc = (p.excerpt?.rendered || "")
+              .replace(/<[^>]+>/g, "")
+              .replace(/&amp;/g, "&")
+              .replace(/&#8217;/g, "'")
+              .replace(/&#8211;/g, "-")
+              .replace(/&#038;/g, "&")
+              .trim();
+
+            const featuredMedia = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url || null;
+
+            return res.json({
+              success: true,
+              url: p.link || url,
+              domain: "slsports.lk",
+              title: cleanTitle || slugToTitle(slug),
+              originalTitle: p.title?.rendered || cleanTitle,
+              description: cleanDesc || "Read the latest developing sports coverage and full match details on slsports.lk.",
+              featuredImage: featuredMedia,
+              candidateImages: featuredMedia ? [featuredMedia] : [],
+              siteName: "SL Sports",
+              author: "SL Sports Desk",
+              publishedTime: p.date
+                ? new Date(p.date).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "Today",
+              favicon: "https://www.google.com/s2/favicons?domain=slsports.lk&sz=128",
+            });
+          }
+        }
+      } catch (wpErr) {
+        console.warn("WP REST API query warning, proceeding to HTML scrape:", wpErr);
+      }
+    }
+
     // If root homepage URL provided, automatically pick the latest top post from slsports.lk
     if (parsedUrl.pathname === "/" || parsedUrl.pathname === "") {
       try {
         const wpRes = await fetch("https://slsports.lk/wp-json/wp/v2/posts?_embed&per_page=1", {
           headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(4000),
         });
         if (wpRes.ok) {
-          const posts = await wpRes.json();
-          if (posts && posts[0]?.link) {
+          const wpText = await wpRes.text();
+          const posts = safeParseJson<any[]>(wpText);
+          if (Array.isArray(posts) && posts.length > 0 && posts[0]?.link) {
             url = posts[0].link;
             parsedUrl = new URL(url);
           }
@@ -295,20 +402,38 @@ export async function handleFetchArticle(req: any, res: any) {
       }
     }
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FacebookExternalHit/1.1",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-    });
+    let response: Response | null = null;
+    try {
+      response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 FacebookExternalHit/1.1",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(6000),
+      });
+    } catch (netErr) {
+      console.warn("Direct fetch to slsports.lk timed out or failed:", netErr);
+    }
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: `Failed to load webpage from slsports.lk (${response.status}: ${response.statusText}).`,
+    if (!response || !response.ok) {
+      const fallbackTitle = slug ? slugToTitle(slug) : "SL Sports News Update";
+      return res.json({
+        success: true,
+        url,
+        domain: "slsports.lk",
+        title: fallbackTitle,
+        originalTitle: fallbackTitle,
+        description: "Breaking Sri Lanka sports updates and coverage from slsports.lk.",
+        featuredImage: null,
+        candidateImages: [],
+        siteName: "SL Sports",
+        author: "SL Sports Desk",
+        publishedTime: "Today",
+        favicon: "https://www.google.com/s2/favicons?domain=slsports.lk&sz=128",
       });
     }
 
@@ -441,8 +566,20 @@ export async function handleFetchArticle(req: any, res: any) {
     });
   } catch (err: any) {
     console.error("Fetch article error:", err);
-    return res.status(500).json({
-      error: "Failed to fetch article from slsports.lk: " + (err.message || String(err)),
+    const slug = requestedUrl ? slugToTitle(requestedUrl) : "SL Sports News Update";
+    return res.json({
+      success: true,
+      url: requestedUrl || "https://slsports.lk/",
+      domain: "slsports.lk",
+      title: slug,
+      originalTitle: slug,
+      description: "Breaking Sri Lanka sports news coverage and updates from slsports.lk.",
+      featuredImage: null,
+      candidateImages: [],
+      siteName: "SL Sports",
+      author: "SL Sports Desk",
+      publishedTime: "Today",
+      favicon: "https://www.google.com/s2/favicons?domain=slsports.lk&sz=128",
     });
   }
 }

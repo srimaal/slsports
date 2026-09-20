@@ -54,21 +54,34 @@ export async function extractArticleClientSide(inputUrl: string): Promise<Articl
     }
   }
 
+  const slugToTitle = (rawUrl: string): string => {
+    try {
+      const u = new URL(rawUrl);
+      const segments = u.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+      const slug = segments[segments.length - 1] || "";
+      if (slug && slug !== "wp-admin" && slug !== "feed") {
+        const words = slug.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+        return words.replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+    } catch {
+      // ignore
+    }
+    return "SL Sports: Developing Match Report";
+  };
+
   if (!htmlText) {
-    // If external proxies are unavailable, generate clean domain-level article data
-    const capitalizedDomain = domain.split(".")[0];
-    const formattedSite = capitalizedDomain.charAt(0).toUpperCase() + capitalizedDomain.slice(1);
+    const slugTitle = slugToTitle(url);
     return {
       url,
-      domain,
-      title: `${formattedSite} Report: Developing News Update`,
-      originalTitle: `${formattedSite} Report`,
-      description: `Read the latest developing coverage and news update from ${domain}.`,
+      domain: "slsports.lk",
+      title: slugTitle,
+      originalTitle: slugTitle,
+      description: `Read the latest developing sports coverage and full match details on slsports.lk.`,
       featuredImage: null,
       candidateImages: [],
-      siteName: formattedSite,
+      siteName: "SL Sports",
       publishedTime: "Today",
-      favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
+      favicon: `https://www.google.com/s2/favicons?domain=slsports.lk&sz=128`,
     };
   }
 

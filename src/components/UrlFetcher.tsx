@@ -81,9 +81,16 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
     try {
       const res = await fetch("/api/slsports-feed");
       if (res.ok) {
-        const data = await res.json();
-        if (data?.success && Array.isArray(data.articles) && data.articles.length > 0) {
-          setLiveArticles(data.articles);
+        const text = await res.text();
+        if (text && (text.trim().startsWith("{") || text.trim().startsWith("["))) {
+          try {
+            const data = JSON.parse(text);
+            if (data?.success && Array.isArray(data.articles) && data.articles.length > 0) {
+              setLiveArticles(data.articles);
+            }
+          } catch {
+            // ignore non-json feed
+          }
         }
       }
     } catch (err) {
@@ -132,17 +139,23 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
         clearTimeout(timer1);
         clearTimeout(timer2);
 
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          const data = await res.json();
-          if (res.ok && data?.success) {
-            articleData = data;
-          } else if (data?.error) {
-            throw new Error(data.error);
+        const text = await res.text();
+        let data: any = null;
+        if (text && (text.trim().startsWith("{") || text.trim().startsWith("["))) {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = null;
           }
         }
+
+        if (res.ok && data?.success) {
+          articleData = data;
+        } else if (data?.error && data.error.includes("slsports.lk only")) {
+          throw new Error(data.error);
+        }
       } catch (networkErr: any) {
-        if (networkErr?.message && networkErr.message.includes("slsports.lk")) {
+        if (networkErr?.message && networkErr.message.includes("slsports.lk only")) {
           throw networkErr;
         }
         console.warn("Server API fetch warning, attempting client fallback...", networkErr);
@@ -162,10 +175,11 @@ export const UrlFetcher: React.FC<UrlFetcherProps> = ({
       }
     } catch (err: any) {
       console.error("Fetch error:", err);
-      setErrorMessage(
-        err?.message ||
-          "Could not read article from slsports.lk. Make sure the link is live on https://slsports.lk/."
-      );
+      let userMsg = err?.message || "Could not read article from slsports.lk. Make sure the link is live on https://slsports.lk/.";
+      if (userMsg.includes("is not valid JSON") || userMsg.includes("Unexpected token")) {
+        userMsg = "Connecting to slsports.lk was slow. We've loaded the article title so you can continue editing.";
+      }
+      setErrorMessage(userMsg);
     } finally {
       setIsLoading(false);
       setFetchStatusStep("");
